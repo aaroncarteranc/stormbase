@@ -12,3 +12,4 @@ litellm
 diskcache
 ddgs
 lxml-html-clean
+pytest
