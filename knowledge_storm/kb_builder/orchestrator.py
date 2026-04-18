@@ -98,9 +98,9 @@ class KBOrchestrator:
                 f"Seeded queue with {len(seed_entries)} articles."
             )
 
-        expansion_round = 0
+        articles_completed = 0
         while not self.queue.is_empty():
-            if self._kb_is_complete(expansion_round):
+            if self._kb_is_complete(articles_completed):
                 self.exporter.append_run_log(
                     "KB completion detected. Proceeding to discussion generation."
                 )
@@ -122,7 +122,7 @@ class KBOrchestrator:
                 info_objects=info_objects,
             )
 
-            summary = self._summarize_article(article.title, report[:500])
+            summary = self._summarize_article(article.title, report[:500]) if report else article.description
             self.exporter.update_kb_index(article.title, summary)
             self.queue.complete(article.title)
             self.exporter.append_run_log(f"Completed article: {article.title}")
@@ -144,7 +144,7 @@ class KBOrchestrator:
                 else:
                     self._silence_count += 1
 
-            expansion_round += 1
+            articles_completed += 1
 
         self._generate_discussion_docs()
         self.exporter.append_run_log("KB Builder run complete.")
@@ -209,8 +209,8 @@ class KBOrchestrator:
                 candidates.append(phrase)
         return candidates[:5]
 
-    def _kb_is_complete(self, expansion_round: int) -> bool:
-        if expansion_round >= self.config.max_expansion_rounds:
+    def _kb_is_complete(self, articles_completed: int) -> bool:
+        if articles_completed >= self.config.max_expansion_rounds:
             return True
         if self.queue.total_count() >= self.config.max_articles:
             return True

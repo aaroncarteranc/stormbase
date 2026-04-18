@@ -45,7 +45,7 @@ def test_scan_for_curiosity_candidates_skips_known(tmp_path):
 def test_kb_is_complete_expansion_ceiling(tmp_path):
     orch = make_orchestrator(tmp_path)
     # Hits max_expansion_rounds
-    result = orch._kb_is_complete(expansion_round=3)
+    result = orch._kb_is_complete(articles_completed=3)
     assert result is True
 
 
@@ -56,7 +56,7 @@ def test_kb_is_complete_article_ceiling(tmp_path):
         ArticleEntry(title=f"Article {i}", description="", source="seed", priority="medium")
         for i in range(10)
     ])
-    result = orch._kb_is_complete(expansion_round=0)
+    result = orch._kb_is_complete(articles_completed=0)
     assert result is True
 
 
@@ -64,7 +64,7 @@ def test_kb_is_complete_silence_triggers_semantic_check(tmp_path):
     orch = make_orchestrator(tmp_path)
     orch._silence_count = 2  # equals completion_silence_n
     orch.expansion_planner.kb_is_sufficient = MagicMock(return_value=True)
-    result = orch._kb_is_complete(expansion_round=0)
+    result = orch._kb_is_complete(articles_completed=0)
     assert result is True
     orch.expansion_planner.kb_is_sufficient.assert_called_once()
 
@@ -73,5 +73,5 @@ def test_kb_is_complete_silence_but_not_sufficient(tmp_path):
     orch = make_orchestrator(tmp_path)
     orch._silence_count = 2
     orch.expansion_planner.kb_is_sufficient = MagicMock(return_value=False)
-    result = orch._kb_is_complete(expansion_round=0)
+    result = orch._kb_is_complete(articles_completed=0)
     assert result is False

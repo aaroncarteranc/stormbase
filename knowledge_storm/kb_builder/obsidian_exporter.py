@@ -42,7 +42,7 @@ class ObsidianExporter:
         citation_map = self._build_citation_map(info_objects)
         content = self._replace_citations_with_wikilinks(report, citation_map)
         source_wikilinks = [
-            f'  - "[[original-documents/{self._slugify(info.title or info.url)}]]"'
+            f'  - "[[original-documents/{self._slugify(info.title or info.url or "unknown-source")}]]"'
             for info in info_objects
         ]
         frontmatter = (
@@ -58,10 +58,14 @@ class ObsidianExporter:
         path = os.path.join(self.vault_dir, "indexed", f"{slug}.md")
         with open(path, "w", encoding="utf-8") as f:
             f.write(frontmatter + content)
+        # Update cited_by in each original doc
+        for info in info_objects:
+            source_slug = self._slugify(info.title or info.url or "unknown-source")
+            self.update_original_doc_cited_by(source_slug, article_title)
         return path
 
     def export_original_doc(self, info: Information) -> str:
-        slug = self._slugify(info.title or info.url)
+        slug = self._slugify(info.title or info.url or "unknown-source")
         path = os.path.join(self.vault_dir, "original-documents", f"{slug}.md")
         if os.path.exists(path):
             return path
@@ -78,6 +82,30 @@ class ObsidianExporter:
         with open(path, "w", encoding="utf-8") as f:
             f.write(frontmatter + content)
         return path
+
+    def update_original_doc_cited_by(self, source_slug: str, indexed_article_title: str):
+        path = os.path.join(self.vault_dir, "original-documents", f"{source_slug}.md")
+        if not os.path.exists(path):
+            return
+        indexed_slug = self._slugify(indexed_article_title)
+        wikilink = f"[[indexed/{indexed_slug}]]"
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        # Update cited_by list in frontmatter
+        if "cited_by: []" in content:
+            content = content.replace(
+                "cited_by: []",
+                f"cited_by:\n  - \"{wikilink}\""
+            )
+        elif f"cited_by:" in content and wikilink not in content:
+            # Append to existing list
+            content = re.sub(
+                r"(cited_by:\n(?:  - .*\n)*)",
+                rf'\1  - "{wikilink}"\n',
+                content
+            )
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
 
     def export_discussion_doc(
         self,
