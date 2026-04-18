@@ -4,7 +4,7 @@ No API keys are required for the LM. For retrieval, DuckDuckGo requires no key; 
 
 Usage:
     python examples/costorm_examples/run_costorm_ollama.py \
-        --model gemma3:27b \
+        --model gemma4:e4b \
         --retriever duckduckgo \
         --enable_log_print
 
@@ -17,6 +17,7 @@ args.output_dir/
 
 import json
 import os
+import traceback
 from argparse import ArgumentParser
 
 from knowledge_storm.collaborative_storm.engine import (
@@ -52,12 +53,12 @@ def main(args):
     }
 
     lm_config: CollaborativeStormLMConfigs = CollaborativeStormLMConfigs()
-    lm_config.set_question_answering_lm(OllamaClient(max_tokens=1000, **ollama_kwargs))
-    lm_config.set_discourse_manage_lm(OllamaClient(max_tokens=500, **ollama_kwargs))
-    lm_config.set_utterance_polishing_lm(OllamaClient(max_tokens=2000, **ollama_kwargs))
-    lm_config.set_warmstart_outline_gen_lm(OllamaClient(max_tokens=500, **ollama_kwargs))
-    lm_config.set_question_asking_lm(OllamaClient(max_tokens=300, **ollama_kwargs))
-    lm_config.set_knowledge_base_lm(OllamaClient(max_tokens=1000, **ollama_kwargs))
+    lm_config.set_question_answering_lm(OllamaClient(max_tokens=10000, **ollama_kwargs))
+    lm_config.set_discourse_manage_lm(OllamaClient(max_tokens=5000, **ollama_kwargs))
+    lm_config.set_utterance_polishing_lm(OllamaClient(max_tokens=20000, **ollama_kwargs))
+    lm_config.set_warmstart_outline_gen_lm(OllamaClient(max_tokens=5000, **ollama_kwargs))
+    lm_config.set_question_asking_lm(OllamaClient(max_tokens=3000, **ollama_kwargs))
+    lm_config.set_knowledge_base_lm(OllamaClient(max_tokens=10000, **ollama_kwargs))
 
     topic = input("Topic: ")
     runner_argument = RunnerArgument(
@@ -120,6 +121,28 @@ def main(args):
                 'Choose from: "bing", "you", "brave", "duckduckgo", "serper", "tavily", "searxng"'
             )
 
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    def save_checkpoint(label="checkpoint"):
+        """Write current runner state to disk without disrupting the run."""
+        try:
+            with open(os.path.join(args.output_dir, "conversation_history.json"), "w") as f:
+                json.dump(
+                    [t.to_dict() for t in costorm_runner.conversation_history],
+                    f, indent=2,
+                )
+            with open(os.path.join(args.output_dir, "knowledge_base_snapshot.json"), "w") as f:
+                json.dump(costorm_runner.knowledge_base.to_dict(), f, indent=2)
+            # dump_logging_and_reset with reset_logging=False so the run continues normally
+            with open(os.path.join(args.output_dir, "llm_logs.json"), "w") as f:
+                json.dump(
+                    costorm_runner.logging_wrapper.dump_logging_and_reset(reset_logging=False),
+                    f, indent=2,
+                )
+            print(f"[checkpoint] {label} saved to {args.output_dir}")
+        except Exception as e:
+            print(f"[checkpoint] failed to save ({label}): {e}")
+
     costorm_runner = CoStormRunner(
         lm_config=lm_config,
         runner_argument=runner_argument,
@@ -128,36 +151,54 @@ def main(args):
         callback_handler=callback_handler,
     )
 
-    # Warm start: builds the initial shared conceptual space / mind map
-    costorm_runner.warm_start()
+    simulate_user_intent = args.simulate_user_intent or topic
 
-    # Observe one agent turn, then allow user to inject an utterance, then observe one more
-    conv_turn = costorm_runner.step()
-    print(f"**{conv_turn.role}**: {conv_turn.utterance}\n")
+    try:
+        # Warm start: builds the initial shared conceptual space / mind map
+        costorm_runner.warm_start()
+        save_checkpoint("after warm_start")
 
-    your_utterance = input("Your utterance (or press Enter to skip): ").strip()
-    if your_utterance:
-        costorm_runner.step(user_utterance=your_utterance)
+        # Run the full round-table conversation
+        for turn_num in range(1, runner_argument.total_conv_turn + 1):
+            print(f"\n--- Turn {turn_num}/{runner_argument.total_conv_turn} ---")
 
-    conv_turn = costorm_runner.step()
-    print(f"**{conv_turn.role}**: {conv_turn.utterance}\n")
+            # System agent turn
+            conv_turn = costorm_runner.step()
+            if conv_turn is not None:
+                print(f"**{conv_turn.role}**: {conv_turn.utterance}\n")
+            save_checkpoint(f"turn {turn_num} system")
 
-    # Generate and save report
-    costorm_runner.knowledge_base.reorganize()
-    article = costorm_runner.generate_report()
+            # Simulated user turn
+            user_turn = costorm_runner.step(
+                simulate_user=True,
+                simulate_user_intent=simulate_user_intent,
+            )
+            if user_turn is not None:
+                print(f"**{user_turn.role}**: {user_turn.utterance}\n")
+            save_checkpoint(f"turn {turn_num} user")
 
-    os.makedirs(args.output_dir, exist_ok=True)
+        # Generate and save report
+        print("\nRound-table complete. Generating report...")
+        costorm_runner.knowledge_base.reorganize()
+        article = costorm_runner.generate_report()
 
-    with open(os.path.join(args.output_dir, "report.md"), "w") as f:
-        f.write(article)
+        with open(os.path.join(args.output_dir, "report.md"), "w") as f:
+            f.write(article)
 
-    with open(os.path.join(args.output_dir, "instance_dump.json"), "w") as f:
-        json.dump(costorm_runner.to_dict(), f, indent=2)
+        with open(os.path.join(args.output_dir, "instance_dump.json"), "w") as f:
+            json.dump(costorm_runner.to_dict(), f, indent=2)
 
-    with open(os.path.join(args.output_dir, "log.json"), "w") as f:
-        json.dump(costorm_runner.dump_logging_and_reset(), f, indent=2)
+        with open(os.path.join(args.output_dir, "log.json"), "w") as f:
+            json.dump(costorm_runner.dump_logging_and_reset(), f, indent=2)
 
-    print(f"\nReport saved to {os.path.join(args.output_dir, 'report.md')}")
+        print(f"\nReport saved to {os.path.join(args.output_dir, 'report.md')}")
+
+    except Exception:
+        print("\n[error] Run failed — saving emergency checkpoint.")
+        with open(os.path.join(args.output_dir, "error.txt"), "w") as f:
+            f.write(traceback.format_exc())
+        save_checkpoint("on error")
+        raise
 
 
 if __name__ == "__main__":
@@ -199,5 +240,9 @@ if __name__ == "__main__":
     parser.add_argument("--node_expansion_trigger_count", type=int, default=10)
     parser.add_argument("--enable_log_print", action="store_true",
                         help="Print conversation turns to console as they happen.")
+    parser.add_argument(
+        "--simulate_user_intent", type=str, default="",
+        help="Intent string for the simulated user. Defaults to the topic if not set.",
+    )
 
     main(parser.parse_args())

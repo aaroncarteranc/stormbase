@@ -75,9 +75,7 @@ class Encoder:
         self.total_token_usage = 0
 
         # Initialize the appropriate embedding model
-        encoder_type = encoder_type or os.getenv("ENCODER_API_TYPE")
-        if not encoder_type:
-            raise ValueError("ENCODER_API_TYPE environment variable is not set.")
+        encoder_type = encoder_type or os.getenv("ENCODER_API_TYPE", "local")
 
         if encoder_type.lower() == "openai":
             self.embedding_model_name = "text-embedding-3-small"
@@ -89,9 +87,15 @@ class Encoder:
                 "api_base": api_base or os.getenv("AZURE_API_BASE"),
                 "api_version": api_version or os.getenv("AZURE_API_VERSION"),
             }
+        elif encoder_type.lower() == "local":
+            self.embedding_model_name = "local"
+            self._local_model_name = api_base or os.getenv(
+                "LOCAL_ENCODER_MODEL", "paraphrase-MiniLM-L6-v2"
+            )
+            self._st_model = None  # lazy-loaded
         else:
             raise ValueError(
-                f"Unsupported ENCODER_API_TYPE '{encoder_type}'. Supported types are 'openai', 'azure', 'together'."
+                f"Unsupported ENCODER_API_TYPE '{encoder_type}'. Supported types are 'openai', 'azure', 'local'."
             )
 
     def get_total_token_usage(self, reset: bool = False) -> int:
@@ -121,7 +125,16 @@ class Encoder:
         """
         return self._get_text_embeddings(texts, max_workers=max_workers)
 
+    def _get_st_model(self):
+        if self._st_model is None:
+            from sentence_transformers import SentenceTransformer
+            self._st_model = SentenceTransformer(self._local_model_name)
+        return self._st_model
+
     def _get_single_text_embedding(self, text):
+        if self.embedding_model_name == "local":
+            embedding = self._get_st_model().encode(text).tolist()
+            return text, embedding, 0
         response = litellm.embedding(
             model=self.embedding_model_name, input=text, caching=True, **self.kargs
         )
@@ -151,6 +164,9 @@ class Encoder:
             _, embedding, tokens = self._get_single_text_embedding(texts)
             self.total_token_usage += tokens
             return np.array(embedding)
+
+        if self.embedding_model_name == "local":
+            return self._get_st_model().encode(texts)
 
         embeddings = []
         total_tokens = 0

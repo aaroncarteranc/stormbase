@@ -151,10 +151,17 @@ class ConvToSection(dspy.Module):
 
         info = ArticleTextProcessing.limit_word_count_preserve_newline(info, 1500)
 
+        section_name = section
         with dspy.settings.context(lm=self.engine):
-            section = ArticleTextProcessing.clean_up_section(
-                self.write_section(topic=topic, info=info, section=section).output
-            )
+            output = self.write_section(topic=topic, info=info, section=section_name).output
+
+        # Thinking models often invent their own section titles. Enforce the outline's name.
+        lines = output.strip().split("\n")
+        if lines and lines[0].lstrip().startswith("#"):
+            lines[0] = f"# {section_name}"
+        else:
+            lines.insert(0, f"# {section_name}")
+        section = ArticleTextProcessing.clean_up_section("\n".join(lines))
 
         return dspy.Prediction(section=section)
 

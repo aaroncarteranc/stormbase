@@ -3,18 +3,24 @@ import re
 from typing import Union, List
 
 import dspy
-import requests
-from bs4 import BeautifulSoup
 
 
 def get_wiki_page_title_and_toc(url):
-    """Get the main title and table of contents from an url of a Wikipedia page."""
+    """Get the title and a content summary for a Wikipedia URL via DuckDuckGo search."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
 
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, "html.parser")
-
-    # Get the main title from the first h1 tag
-    main_title = soup.find("h1").text.replace("[edit]", "").strip().replace("\xa0", " ")
+    topic = url.rstrip("/").split("/")[-1].replace("_", " ")
+    with DDGS() as ddgs:
+        results = list(ddgs.text(f"site:en.wikipedia.org {topic}", max_results=1))
+    if not results:
+        raise ValueError(f"No DuckDuckGo results for {url}")
+    result = results[0]
+    title = result.get("title", topic).replace(" - Wikipedia", "").strip()
+    summary = result.get("body", "")
+    return title, summary
 
     toc = ""
     levels = []
@@ -85,8 +91,8 @@ class CreateWriterWithPersona(dspy.Module):
             examples = []
             for url in urls:
                 try:
-                    title, toc = get_wiki_page_title_and_toc(url)
-                    examples.append(f"Title: {title}\nTable of Contents: {toc}")
+                    title, summary = get_wiki_page_title_and_toc(url)
+                    examples.append(f"Title: {title}\nSummary: {summary}")
                 except Exception as e:
                     logging.error(f"Error occurs when processing {url}: {e}")
                     continue
