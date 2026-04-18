@@ -38,6 +38,8 @@ from knowledge_storm import (
     STORMWikiLMConfigs,
 )
 from knowledge_storm.utils import load_api_key
+import litellm
+litellm.set_verbose = True
 
 
 def main(args):
@@ -48,16 +50,16 @@ def main(args):
         "model": args.model,
         "port": args.port,
         "url": args.url,
-        "stop": (
-            "\n\n---",
-        ),  # dspy uses "\n\n---" to separate examples. Open models sometimes generate this.
+        # "stop": (
+        #     "\n\n---",
+        # ),  # dspy uses "\n\n---" to separate examples. Open models sometimes generate this.
     }
 
-    conv_simulator_lm = OllamaClient(max_tokens=500, **ollama_kwargs)
-    question_asker_lm = OllamaClient(max_tokens=500, **ollama_kwargs)
-    outline_gen_lm = OllamaClient(max_tokens=400, **ollama_kwargs)
-    article_gen_lm = OllamaClient(max_tokens=700, **ollama_kwargs)
-    article_polish_lm = OllamaClient(max_tokens=4000, **ollama_kwargs)
+    conv_simulator_lm = OllamaClient(max_tokens=5000, **ollama_kwargs)
+    question_asker_lm = OllamaClient(max_tokens=5000, **ollama_kwargs)
+    outline_gen_lm = OllamaClient(max_tokens=4000, **ollama_kwargs)
+    article_gen_lm = OllamaClient(max_tokens=7000, **ollama_kwargs)
+    article_polish_lm = OllamaClient(max_tokens=10000, **ollama_kwargs)
 
     lm_configs.set_conv_simulator_lm(conv_simulator_lm)
     lm_configs.set_question_asker_lm(question_asker_lm)

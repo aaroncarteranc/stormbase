@@ -747,11 +747,14 @@ class DuckDuckGoSearchRM(dspy.Retrieve):
         """
         super().__init__(k=k)
         try:
-            from duckduckgo_search import DDGS
-        except ImportError as err:
-            raise ImportError(
-                "Duckduckgo requires `pip install duckduckgo_search`."
-            ) from err
+            from ddgs import DDGS
+        except ImportError:
+            try:
+                from duckduckgo_search import DDGS
+            except ImportError as err:
+                raise ImportError(
+                    "Duckduckgo requires `pip install ddgs` (or `pip install duckduckgo_search`)."
+                ) from err
         self.k = k
         self.webpage_helper = WebPageHelper(
             min_char_count=min_char_count,
